@@ -1,584 +1,189 @@
 import React, { useState } from "react";
-import "./App.css";
 
-const API_BASE = "http://127.0.0.1:8000";
+/* ============================================================
+   CAREERPILOT AI
+   Frontend Application
+   ============================================================ */
 
-/* =========================================================
-   MAIN APP
-========================================================= */
+/*
+ * IMPORTANT:
+ * Production backend deployed on Render.
+ *
+ * Do NOT use localhost here for the deployed application.
+ */
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://careerpilot-ai-hgew.onrender.com";
+
 
 function App() {
-  const [page, setPage] = useState("dashboard");
+  const [activePage, setActivePage] = useState("home");
 
-  const [resumeSkills, setResumeSkills] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("resumeSkills")) || [];
-    } catch {
-      return [];
-    }
-  });
+  const [resumeFile, setResumeFile] = useState(null);
+  const [resumeSkills, setResumeSkills] = useState([]);
+  const [resumeText, setResumeText] = useState("");
+  const [resumeLoading, setResumeLoading] = useState(false);
 
-  const [resumeName, setResumeName] = useState(
-    localStorage.getItem("resumeName") || ""
-  );
+  const [jobDescription, setJobDescription] = useState("");
+  const [jobResult, setJobResult] = useState(null);
+  const [jobLoading, setJobLoading] = useState(false);
 
-  const [jobResult, setJobResult] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("jobResult")) || null;
-    } catch {
-      return null;
-    }
-  });
+  const [roadmap, setRoadmap] = useState([]);
+  const [roadmapLoading, setRoadmapLoading] = useState(false);
 
-  const [roadmap, setRoadmap] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("roadmap")) || null;
-    } catch {
-      return null;
-    }
-  });
-
-  const saveSkills = (skills) => {
-    const cleanSkills = Array.isArray(skills)
-      ? skills
-          .map((s) => String(s).toLowerCase().trim())
-          .filter(Boolean)
-      : [];
-
-    setResumeSkills(cleanSkills);
-    localStorage.setItem("resumeSkills", JSON.stringify(cleanSkills));
-  };
-
-  const saveJobResult = (result) => {
-    setJobResult(result);
-    localStorage.setItem("jobResult", JSON.stringify(result));
-  };
-
-  const saveRoadmap = (result) => {
-    setRoadmap(result);
-    localStorage.setItem("roadmap", JSON.stringify(result));
-  };
-
-  return (
-    <div className="app">
-      <Navbar page={page} setPage={setPage} />
-
-      {page === "dashboard" && (
-        <Dashboard
-          resumeSkills={resumeSkills}
-          jobResult={jobResult}
-          roadmap={roadmap}
-          setPage={setPage}
-        />
-      )}
-
-      {page === "resume" && (
-        <ResumePage
-          resumeSkills={resumeSkills}
-          resumeName={resumeName}
-          setResumeName={setResumeName}
-          saveSkills={saveSkills}
-        />
-      )}
-
-      {page === "jobmatch" && (
-        <JobMatchPage
-          resumeSkills={resumeSkills}
-          jobResult={jobResult}
-          saveJobResult={saveJobResult}
-          setPage={setPage}
-        />
-      )}
-
-      {page === "roadmap" && (
-        <RoadmapPage
-          resumeSkills={resumeSkills}
-          jobResult={jobResult}
-          roadmap={roadmap}
-          saveRoadmap={saveRoadmap}
-          setPage={setPage}
-        />
-      )}
-    </div>
-  );
-}
-
-/* =========================================================
-   NAVBAR
-========================================================= */
-
-function Navbar({ page, setPage }) {
-  return (
-    <header className="navbar">
-      <div
-        className="brand"
-        onClick={() => setPage("dashboard")}
-      >
-        <div className="brand-logo">CP</div>
-
-        <div className="brand-name">
-          CareerPilot <span>AI</span>
-        </div>
-      </div>
-
-      <nav className="nav-links">
-        <button
-          className={page === "dashboard" ? "active" : ""}
-          onClick={() => setPage("dashboard")}
-        >
-          Dashboard
-        </button>
-
-        <button
-          className={page === "resume" ? "active" : ""}
-          onClick={() => setPage("resume")}
-        >
-          Resume
-        </button>
-
-        <button
-          className={page === "jobmatch" ? "active" : ""}
-          onClick={() => setPage("jobmatch")}
-        >
-          Job Match
-        </button>
-
-        <button
-          className={page === "roadmap" ? "active" : ""}
-          onClick={() => setPage("roadmap")}
-        >
-          Roadmap
-        </button>
-      </nav>
-    </header>
-  );
-}
-
-/* =========================================================
-   DASHBOARD
-========================================================= */
-
-function Dashboard({
-  resumeSkills,
-  jobResult,
-  roadmap,
-  setPage,
-}) {
-  const score = jobResult?.match_score ?? 0;
-
-  const roadmapItems =
-    roadmap?.roadmap ||
-    roadmap?.items ||
-    (Array.isArray(roadmap) ? roadmap : []);
-
-  const savedProgress = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("roadmapProgress")) || {};
-    } catch {
-      return {};
-    }
-  })();
-
-  const completedRoadmapItems = roadmapItems.filter(
-    (_, index) => savedProgress[index] === "completed"
-  ).length;
-
-  const roadmapProgress =
-    roadmapItems.length > 0
-      ? Math.round(
-          (completedRoadmapItems / roadmapItems.length) * 100
-        )
-      : 0;
-
-  return (
-    <main className="page dashboard-page">
-
-      <section className="hero-section">
-        <div className="hero-content">
-          <p className="eyebrow">
-            AI-POWERED CAREER ASSISTANCE
-          </p>
-
-          <h1>
-            Build your career
-            <br />
-            with <span>CareerPilot AI</span>
-          </h1>
-
-          <p className="hero-text">
-            Upload your resume, discover your strengths,
-            analyze job opportunities, and get a personalized
-            learning roadmap.
-          </p>
-
-          <div className="hero-buttons">
-            <button
-              className="primary-btn"
-              onClick={() => setPage("resume")}
-            >
-              Analyze My Resume →
-            </button>
-
-            <button
-              className="secondary-btn"
-              onClick={() => setPage("jobmatch")}
-            >
-              Find Job Match
-            </button>
-          </div>
-        </div>
-
-        <div className="hero-card">
-          <div className="hero-card-icon">✦</div>
-
-          <h3>Your Career Copilot</h3>
-
-          <p>
-            AI-powered insights to help you identify skills,
-            opportunities and learning priorities.
-          </p>
-        </div>
-      </section>
-
-      <section className="stats-grid">
-        <StatCard
-          number={resumeSkills.length}
-          label="Skills Detected"
-          icon="✓"
-        />
-
-        <StatCard
-          number={`${score}%`}
-          label="Job Match Score"
-          icon="%"
-        />
-
-        <StatCard
-          number={jobResult?.missing_skills?.length || 0}
-          label="Skills to Learn"
-          icon="!"
-        />
-
-        <StatCard
-          number={`${completedRoadmapItems}/${roadmapItems.length || 0}`}
-          label="Roadmap Completed"
-          icon="→"
-        />
-      </section>
-
-      {roadmapItems.length > 0 && (
-        <section className="dashboard-progress-card">
-          <div>
-            <p className="eyebrow">LEARNING PROGRESS</p>
-
-            <h2>
-              {completedRoadmapItems} of{" "}
-              {roadmapItems.length} completed
-            </h2>
-
-            <p>
-              Keep learning and building your skills!
-            </p>
-          </div>
-
-          <div className="dashboard-progress-circle">
-            <strong>{roadmapProgress}%</strong>
-          </div>
-        </section>
-      )}
-
-      <section className="dashboard-section">
-        <div className="section-heading">
-          <p className="eyebrow">YOUR CAREER JOURNEY</p>
-
-          <h2>What would you like to do?</h2>
-        </div>
-
-        <div className="feature-grid">
-          <FeatureCard
-            icon="📄"
-            title="Analyze Resume"
-            description="Extract your technical and professional skills automatically."
-            button="Upload Resume"
-            onClick={() => setPage("resume")}
-          />
-
-          <FeatureCard
-            icon="🎯"
-            title="Match a Job"
-            description="Compare your skills against a job description."
-            button="Analyze Job"
-            onClick={() => setPage("jobmatch")}
-          />
-
-          <FeatureCard
-            icon="🗺️"
-            title="Learning Roadmap"
-            description="Get a personalized roadmap based on your career gaps."
-            button="View Roadmap"
-            onClick={() => setPage("roadmap")}
-          />
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function StatCard({ number, label, icon }) {
-  return (
-    <div className="stat-card">
-      <div className="stat-icon">{icon}</div>
-
-      <div>
-        <div className="stat-number">{number}</div>
-        <div className="stat-label">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  description,
-  button,
-  onClick,
-}) {
-  return (
-    <div className="feature-card">
-      <div className="feature-icon">{icon}</div>
-
-      <h3>{title}</h3>
-
-      <p>{description}</p>
-
-      <button className="card-btn" onClick={onClick}>
-        {button} →
-      </button>
-    </div>
-  );
-}
-
-/* =========================================================
-   RESUME PAGE
-========================================================= */
-
-function ResumePage({
-  resumeSkills,
-  resumeName,
-  setResumeName,
-  saveSkills,
-}) {
-  const [file, setFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const handleFileChange = (event) => {
-    const selectedFile = event.target.files?.[0];
 
-    if (!selectedFile) return;
+  /* ============================================================
+     API HELPER
+     ============================================================ */
 
-    setFile(selectedFile);
-    setResumeName(selectedFile.name);
+  const apiRequest = async (endpoint, options = {}) => {
+    const url = `${API_BASE}${endpoint}`;
 
-    localStorage.setItem(
-      "resumeName",
-      selectedFile.name
-    );
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          Accept: "application/json",
+          ...(options.headers || {}),
+        },
+      });
 
-    setMessage("");
-    setError("");
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      let data;
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        data = await response.text();
+      }
+
+      if (!response.ok) {
+        const message =
+          typeof data === "object"
+            ? data.detail || data.message
+            : data;
+
+        throw new Error(
+          message || `Request failed (${response.status})`
+        );
+      }
+
+      return data;
+
+    } catch (err) {
+      console.error(
+        `API request failed: ${url}`,
+        err
+      );
+
+      if (
+        err instanceof TypeError &&
+        err.message.toLowerCase().includes("fetch")
+      ) {
+        throw new Error(
+          "Unable to connect to the CareerPilot AI backend. " +
+          "Please check that the backend is running and deployed."
+        );
+      }
+
+      throw err;
+    }
   };
 
-  const handleUpload = async () => {
-    if (!file) {
-      setError("Please choose your resume first.");
+
+  /* ============================================================
+     RESUME UPLOAD
+     ============================================================ */
+
+  const handleResumeUpload = async () => {
+    if (!resumeFile) {
+      setError("Please select a resume first.");
       return;
     }
 
-    setLoading(true);
-    setMessage("");
     setError("");
+    setSuccess("");
+    setResumeLoading(true);
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
 
-      const response = await fetch(
-        `${API_BASE}/upload-resume`,
+      formData.append("file", resumeFile);
+
+      const data = await apiRequest(
+        "/upload-resume",
         {
           method: "POST",
           body: formData,
         }
       );
 
-      const data = await response.json();
+      const skills = Array.isArray(data.skills)
+        ? data.skills
+        : [];
 
-      if (!response.ok) {
-        throw new Error(
-          data?.detail || "Resume upload failed."
-        );
-      }
+      setResumeSkills(skills);
 
-      const skills =
-        data.skills ||
-        data.extracted_skills ||
-        data.resume_skills ||
-        [];
-
-      saveSkills(skills);
-
-      setMessage(
-        `Resume analyzed successfully. ${skills.length} skills detected.`
+      setResumeText(
+        data.text_preview || ""
       );
+
+      setSuccess(
+        "Resume uploaded and analyzed successfully."
+      );
+
     } catch (err) {
       console.error(err);
+
       setError(
-        err.message || "Could not analyze resume."
+        err.message ||
+        "Failed to analyze the resume."
       );
+
     } finally {
-      setLoading(false);
+      setResumeLoading(false);
     }
   };
 
-  return (
-    <main className="page resume-page">
-      <section className="page-heading">
-        <p className="eyebrow">RESUME ANALYSIS</p>
 
-        <h1>Analyze your resume</h1>
+  /* ============================================================
+     JOB ANALYSIS
+     ============================================================ */
 
-        <p>
-          Upload your resume and let CareerPilot AI extract
-          your professional skills.
-        </p>
-      </section>
-
-      <section className="resume-upload-card">
-        <div className="upload-icon">📄</div>
-
-        <h2>Upload your resume</h2>
-
-        <p className="supported">
-          Supported formats: PDF, DOC, DOCX
-        </p>
-
-        <label className="file-box">
-          <input
-            type="file"
-            accept=".pdf,.doc,.docx"
-            onChange={handleFileChange}
-          />
-
-          <span className="choose-btn">
-            Choose File
-          </span>
-
-          <span className="file-text">
-            {file ? file.name : "No file chosen"}
-          </span>
-        </label>
-
-        {resumeName && (
-          <p className="selected-file">
-            Selected: <strong>{resumeName}</strong>
-          </p>
-        )}
-
-        <button
-          className="primary-btn upload-btn"
-          onClick={handleUpload}
-          disabled={loading}
-        >
-          {loading
-            ? "Analyzing..."
-            : "Upload & Analyze"}
-        </button>
-
-        {message && (
-          <div className="success-message">
-            ✓ {message}
-          </div>
-        )}
-
-        {error && (
-          <div className="error-message">
-            ⚠ {error}
-          </div>
-        )}
-      </section>
-
-      <section className="skills-section">
-        <div className="section-heading">
-          <p className="eyebrow">
-            AI EXTRACTED SKILLS
-          </p>
-
-          <h2>Resume Analysis</h2>
-        </div>
-
-        {resumeSkills.length > 0 ? (
-          <div className="skills-container">
-            {resumeSkills.map((skill, index) => (
-              <span
-                className="skill-pill"
-                key={`${skill}-${index}`}
-              >
-                {skill}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state">
-            Upload your resume to see your detected skills.
-          </div>
-        )}
-      </section>
-    </main>
-  );
-}
-
-/* =========================================================
-   JOB MATCH PAGE
-========================================================= */
-
-function JobMatchPage({
-  resumeSkills,
-  jobResult,
-  saveJobResult,
-  setPage,
-}) {
-  const [jobDescription, setJobDescription] =
-    useState("");
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const analyzeJob = async () => {
+  const handleJobAnalysis = async () => {
     if (!jobDescription.trim()) {
-      setError("Please enter a job description.");
+      setError(
+        "Please enter a job description."
+      );
       return;
     }
 
     if (resumeSkills.length === 0) {
       setError(
-        "Please upload and analyze your resume before matching a job."
+        "Please upload and analyze your resume first."
       );
       return;
     }
 
-    setLoading(true);
     setError("");
+    setSuccess("");
+    setJobLoading(true);
 
     try {
-      const response = await fetch(
-        `${API_BASE}/analyze-job`,
+      const data = await apiRequest(
+        "/analyze-job",
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             resume_skills: resumeSkills,
             job_description: jobDescription,
@@ -586,656 +191,652 @@ function JobMatchPage({
         }
       );
 
-      const data = await response.json();
+      setJobResult(data);
 
-      if (!response.ok) {
-        throw new Error(
-          data?.detail || "Job analysis failed."
-        );
-      }
-
-      saveJobResult(data);
-
-      localStorage.setItem(
-        "jobDescription",
-        jobDescription
-      );
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        err.message || "Could not analyze job."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <main className="page job-page">
-      <section className="page-heading">
-        <p className="eyebrow">JOB MATCH</p>
-
-        <h1>Find your job match</h1>
-
-        <p>
-          Compare your resume skills with a job description.
-        </p>
-      </section>
-
-      <section className="job-input-card">
-        <h2>Job Description</h2>
-
-        <textarea
-          value={jobDescription}
-          onChange={(e) => {
-            setJobDescription(e.target.value);
-            setError("");
-          }}
-          placeholder="Paste the job description here..."
-        />
-
-        <div className="job-action-row">
-          <button
-            className="primary-btn"
-            onClick={analyzeJob}
-            disabled={loading}
-          >
-            {loading
-              ? "Analyzing..."
-              : "Analyze Job →"}
-          </button>
-        </div>
-
-        {error && (
-          <div className="error-message">
-            ⚠ {error}
-          </div>
-        )}
-      </section>
-
-      {jobResult && (
-        <section className="job-result-section">
-          <div className="match-score-card">
-            <div className="score">
-              {jobResult.match_score ?? 0}%
-            </div>
-
-            <p>Job Match Score</p>
-          </div>
-
-          <div className="result-grid">
-            <SkillResultCard
-              title="Matched Skills"
-              icon="✓"
-              skills={
-                jobResult.matched_skills || []
-              }
-              type="matched"
-            />
-
-            <SkillResultCard
-              title="Missing Skills"
-              icon="⚠"
-              skills={
-                jobResult.missing_skills || []
-              }
-              type="missing"
-            />
-          </div>
-
-          <div className="result-actions">
-            <button
-              className="primary-btn"
-              onClick={() => setPage("roadmap")}
-            >
-              Build Learning Roadmap →
-            </button>
-          </div>
-        </section>
-      )}
-    </main>
-  );
-}
-
-function SkillResultCard({
-  title,
-  icon,
-  skills,
-  type,
-}) {
-  return (
-    <div className={`result-card ${type}`}>
-      <h2>
-        {icon} {title}
-      </h2>
-
-      {skills.length > 0 ? (
-        <div className="skills-container">
-          {skills.map((skill, index) => (
-            <span
-              className="skill-pill"
-              key={`${skill}-${index}`}
-            >
-              {skill}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="empty-result">
-          No skills found.
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* =========================================================
-   ROADMAP PAGE
-========================================================= */
-
-function RoadmapPage({
-  resumeSkills,
-  jobResult,
-  roadmap,
-  saveRoadmap,
-  setPage,
-}) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const missingSkills =
-    jobResult?.missing_skills || [];
-
-  const roadmapItems =
-    roadmap?.roadmap ||
-    roadmap?.items ||
-    (Array.isArray(roadmap) ? roadmap : []);
-
-  /* -------------------------------------------------------
-     ROADMAP PROGRESS
-  ------------------------------------------------------- */
-
-  const [progress, setProgress] = useState(() => {
-    try {
-      return (
-        JSON.parse(
-          localStorage.getItem("roadmapProgress")
-        ) || {}
-      );
-    } catch {
-      return {};
-    }
-  });
-
-  const updateProgress = (index, status) => {
-    const updatedProgress = {
-      ...progress,
-      [index]: status,
-    };
-
-    setProgress(updatedProgress);
-
-    localStorage.setItem(
-      "roadmapProgress",
-      JSON.stringify(updatedProgress)
-    );
-  };
-
-  const completedCount = roadmapItems.filter(
-    (_, index) => progress[index] === "completed"
-  ).length;
-
-  const inProgressCount = roadmapItems.filter(
-    (_, index) => progress[index] === "in-progress"
-  ).length;
-
-  const progressPercentage =
-    roadmapItems.length > 0
-      ? Math.round(
-          (completedCount /
-            roadmapItems.length) *
-            100
-        )
-      : 0;
-
-  const resetProgress = () => {
-    setProgress({});
-
-    localStorage.removeItem(
-      "roadmapProgress"
-    );
-  };
-
-  /* -------------------------------------------------------
-     GENERATE ROADMAP
-  ------------------------------------------------------- */
-
-  const generateRoadmap = async () => {
-    if (resumeSkills.length === 0) {
-      setError(
-        "Please analyze your resume first."
-      );
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `${API_BASE}/learning-roadmap`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            skills: missingSkills.length
-              ? missingSkills
-              : resumeSkills,
-          }),
-        }
+      setSuccess(
+        "Job analysis completed successfully."
       );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.detail ||
-            "Roadmap generation failed."
-        );
-      }
-
-      saveRoadmap(data);
-
-      setProgress({});
-      localStorage.removeItem(
-        "roadmapProgress"
-      );
     } catch (err) {
       console.error(err);
 
       setError(
         err.message ||
-          "Could not generate learning roadmap."
+        "Failed to analyze the job description."
       );
+
     } finally {
-      setLoading(false);
+      setJobLoading(false);
     }
   };
 
-  return (
-    <main className="page roadmap-page">
 
-      <section className="page-heading">
-        <p className="eyebrow">
-          LEARNING ROADMAP
-        </p>
+  /* ============================================================
+     LEARNING ROADMAP
+     ============================================================ */
 
-        <h1>Your personalized roadmap</h1>
+  const handleRoadmap = async () => {
+    if (
+      !jobResult ||
+      !Array.isArray(jobResult.missing_skills) ||
+      jobResult.missing_skills.length === 0
+    ) {
+      setError(
+        "Analyze a job first to generate a roadmap."
+      );
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setRoadmapLoading(true);
+
+    try {
+      const data = await apiRequest(
+        "/learning-roadmap",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            missing_skills:
+              jobResult.missing_skills,
+          }),
+        }
+      );
+
+      setRoadmap(
+        Array.isArray(data)
+          ? data
+          : []
+      );
+
+      setSuccess(
+        "Learning roadmap generated successfully."
+      );
+
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err.message ||
+        "Failed to generate learning roadmap."
+      );
+
+    } finally {
+      setRoadmapLoading(false);
+    }
+  };
+
+
+  /* ============================================================
+     HEALTH CHECK
+     ============================================================ */
+
+  const testBackend = async () => {
+    setError("");
+    setSuccess("");
+
+    try {
+      const data =
+        await apiRequest("/health");
+
+      console.log(
+        "Backend health:",
+        data
+      );
+
+      setSuccess(
+        "Backend connection is working."
+      );
+
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err.message ||
+        "Backend connection failed."
+      );
+    }
+  };
+
+
+  /* ============================================================
+     RESET
+     ============================================================ */
+
+  const resetAnalysis = () => {
+    setResumeFile(null);
+    setResumeSkills([]);
+    setResumeText("");
+    setJobDescription("");
+    setJobResult(null);
+    setRoadmap([]);
+    setError("");
+    setSuccess("");
+  };
+
+
+  /* ============================================================
+     NAVIGATION
+     ============================================================ */
+
+  const goTo = (page) => {
+    setActivePage(page);
+    setError("");
+    setSuccess("");
+  };
+
+
+  /* ============================================================
+     HOME
+     ============================================================ */
+
+  const renderHome = () => (
+    <div className="page home-page">
+
+      <div className="hero">
+
+        <h1>
+          CareerPilot AI
+        </h1>
 
         <p>
-          Build the skills you need to become
-          job-ready.
+          AI-powered career guidance,
+          resume analysis and job matching.
         </p>
-      </section>
 
-      {/* =================================================
-          START ROADMAP
-      ================================================= */}
+        <div className="hero-buttons">
 
-      {!roadmap && (
-        <section className="roadmap-start-card">
+          <button
+            onClick={() => goTo("resume")}
+          >
+            Analyze Resume
+          </button>
 
-          <div className="roadmap-icon">
-            🗺️
+          <button
+            onClick={() => goTo("job")}
+          >
+            Analyze Job
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div className="feature-grid">
+
+        <div className="feature-card">
+          <h3>📄 Resume Analysis</h3>
+          <p>
+            Upload your resume and
+            automatically identify your skills.
+          </p>
+        </div>
+
+        <div className="feature-card">
+          <h3>🎯 Job Matching</h3>
+          <p>
+            Compare your skills with
+            a target job description.
+          </p>
+        </div>
+
+        <div className="feature-card">
+          <h3>🗺️ Learning Roadmap</h3>
+          <p>
+            Discover missing skills and
+            get a personalized learning path.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+  );
+
+
+  /* ============================================================
+     RESUME PAGE
+     ============================================================ */
+
+  const renderResume = () => (
+    <div className="page">
+
+      <h2>
+        Resume Analysis
+      </h2>
+
+      <p>
+        Upload your PDF, DOCX or DOC resume.
+      </p>
+
+      <div className="card">
+
+        <input
+          type="file"
+          accept=".pdf,.doc,.docx"
+          onChange={(event) => {
+            setResumeFile(
+              event.target.files?.[0] || null
+            );
+
+            setError("");
+            setSuccess("");
+          }}
+        />
+
+        {resumeFile && (
+          <p>
+            Selected:
+            {" "}
+            <strong>
+              {resumeFile.name}
+            </strong>
+          </p>
+        )}
+
+        <button
+          onClick={handleResumeUpload}
+          disabled={
+            resumeLoading ||
+            !resumeFile
+          }
+        >
+          {resumeLoading
+            ? "Analyzing..."
+            : "Upload & Analyze"}
+        </button>
+
+      </div>
+
+
+      {resumeSkills.length > 0 && (
+        <div className="card">
+
+          <h3>
+            Detected Skills
+          </h3>
+
+          <div className="skills">
+
+            {resumeSkills.map(
+              (skill, index) => (
+                <span
+                  className="skill-tag"
+                  key={`${skill}-${index}`}
+                >
+                  {skill}
+                </span>
+              )
+            )}
+
           </div>
 
-          <h2>
-            Ready to improve your skills?
-          </h2>
+        </div>
+      )}
+
+
+      {resumeText && (
+        <div className="card">
+
+          <h3>
+            Resume Preview
+          </h3>
 
           <p>
-            CareerPilot AI will create a learning
-            roadmap based on the skills you are
-            missing.
+            {resumeText}
           </p>
 
-          {missingSkills.length > 0 && (
-            <div className="skills-container">
-              {missingSkills.map(
+        </div>
+      )}
+
+    </div>
+  );
+
+
+  /* ============================================================
+     JOB PAGE
+     ============================================================ */
+
+  const renderJob = () => (
+    <div className="page">
+
+      <h2>
+        Job Match Analysis
+      </h2>
+
+      <div className="card">
+
+        <label>
+          Job Description
+        </label>
+
+        <textarea
+          value={jobDescription}
+          onChange={(event) =>
+            setJobDescription(
+              event.target.value
+            )
+          }
+          placeholder="Paste the job description here..."
+          rows={12}
+        />
+
+        <button
+          onClick={handleJobAnalysis}
+          disabled={
+            jobLoading ||
+            !jobDescription.trim()
+          }
+        >
+          {jobLoading
+            ? "Analyzing..."
+            : "Analyze Job"}
+        </button>
+
+      </div>
+
+
+      {jobResult && (
+        <div className="card">
+
+          <h3>
+            Match Result
+          </h3>
+
+          <div className="match-score">
+
+            <strong>
+              {jobResult.match_score ?? 0}%
+            </strong>
+
+            <span>
+              Match Score
+            </span>
+
+          </div>
+
+
+          <h4>
+            Matched Skills
+          </h4>
+
+          {jobResult.matched_skills?.length > 0 ? (
+
+            <div className="skills">
+
+              {jobResult.matched_skills.map(
                 (skill, index) => (
                   <span
-                    className="skill-pill"
+                    className="skill-tag"
                     key={`${skill}-${index}`}
                   >
                     {skill}
                   </span>
                 )
               )}
+
             </div>
+
+          ) : (
+            <p>
+              No matching skills found.
+            </p>
           )}
 
-          <button
-            className="primary-btn"
-            onClick={generateRoadmap}
-            disabled={loading}
-          >
-            {loading
-              ? "Generating..."
-              : "Generate My Roadmap →"}
-          </button>
 
-          {error && (
-            <div className="error-message">
-              ⚠ {error}
+          <h4>
+            Missing Skills
+          </h4>
+
+          {jobResult.missing_skills?.length > 0 ? (
+
+            <div className="skills">
+
+              {jobResult.missing_skills.map(
+                (skill, index) => (
+                  <span
+                    className="missing-skill"
+                    key={`${skill}-${index}`}
+                  >
+                    {skill}
+                  </span>
+                )
+              )}
+
             </div>
+
+          ) : (
+            <p>
+              Great! No major missing skills detected.
+            </p>
           )}
 
-        </section>
-      )}
 
-      {/* =================================================
-          ROADMAP RESULTS
-      ================================================= */}
-
-      {roadmap && (
-        <section className="roadmap-results">
-
-          {/* PROGRESS HEADER */}
-
-          <div className="progress-card">
-
-            <div className="progress-header">
-
-              <div>
-                <p className="eyebrow">
-                  YOUR PROGRESS
-                </p>
-
-                <h2>
-                  {completedCount} of{" "}
-                  {roadmapItems.length} completed
-                </h2>
-
-                <p className="progress-message">
-                  {progressPercentage === 100
-                    ? "🎉 Congratulations! You are job-ready!"
-                    : progressPercentage > 0
-                    ? "Keep going! You're making progress."
-                    : "Start learning and building your skills!"}
-                </p>
-              </div>
-
-              <div className="progress-percentage">
-                {progressPercentage}%
-              </div>
-
-            </div>
-
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${progressPercentage}%`,
-                }}
-              />
-            </div>
-
-            <div className="progress-stats">
-              <span>
-                ✓ {completedCount} Completed
-              </span>
-
-              <span>
-                ◉ {inProgressCount} In Progress
-              </span>
-
-              <span>
-                ○{" "}
-                {roadmapItems.length -
-                  completedCount -
-                  inProgressCount}{" "}
-                Not Started
-              </span>
-            </div>
-
-          </div>
-
-          {/* RESET */}
-
-          <div className="roadmap-toolbar">
-            <h2>Your Learning Plan</h2>
+          {jobResult.missing_skills?.length > 0 && (
 
             <button
-              className="reset-btn"
-              onClick={resetProgress}
+              onClick={() => {
+                goTo("roadmap");
+                handleRoadmap();
+              }}
+              disabled={roadmapLoading}
             >
-              Reset Progress
+              {roadmapLoading
+                ? "Generating..."
+                : "Generate Learning Roadmap"}
             </button>
-          </div>
 
-          {/* ROADMAP ITEMS */}
-
-          {roadmapItems.length > 0 ? (
-            roadmapItems.map(
-              (item, index) => (
-                <RoadmapItem
-                  key={index}
-                  index={index}
-                  item={item}
-                  status={
-                    progress[index] ||
-                    "not-started"
-                  }
-                  updateProgress={
-                    updateProgress
-                  }
-                />
-              )
-            )
-          ) : (
-            <div className="roadmap-json">
-              <pre>
-                {JSON.stringify(
-                  roadmap,
-                  null,
-                  2
-                )}
-              </pre>
-            </div>
           )}
 
-        </section>
+        </div>
       )}
 
-      {/* =================================================
-          BOTTOM ACTIONS
-      ================================================= */}
-
-      <div className="bottom-actions">
-
-        <button
-          className="secondary-btn"
-          onClick={() =>
-            setPage("jobmatch")
-          }
-        >
-          ← Back to Job Match
-        </button>
-
-        <button
-          className="primary-btn"
-          onClick={() =>
-            setPage("dashboard")
-          }
-        >
-          Back to Dashboard
-        </button>
-
-      </div>
-
-    </main>
+    </div>
   );
-}
 
-/* =========================================================
-   ROADMAP ITEM
-========================================================= */
 
-function RoadmapItem({
-  index,
-  item,
-  status,
-  updateProgress,
-}) {
-  const title =
-    typeof item === "string"
-      ? item
-      : item.title ||
-        item.skill ||
-        item.name ||
-        `Learning Step ${index + 1}`;
+  /* ============================================================
+     ROADMAP PAGE
+     ============================================================ */
 
-  return (
-    <div
-      className={`roadmap-item ${status}`}
-    >
+  const renderRoadmap = () => (
+    <div className="page">
 
-      <div className="roadmap-number">
-        {status === "completed"
-          ? "✓"
-          : index + 1}
+      <h2>
+        Learning Roadmap
+      </h2>
+
+      <div className="card">
+
+        <button
+          onClick={handleRoadmap}
+          disabled={roadmapLoading}
+        >
+          {roadmapLoading
+            ? "Generating Roadmap..."
+            : "Generate Roadmap"}
+        </button>
+
       </div>
 
-      <div className="roadmap-content">
 
-        <div className="roadmap-title-row">
+      {roadmap.length > 0 && (
 
-          <div>
-            <h2>{title}</h2>
+        <div className="roadmap-list">
 
-            <span
-              className={`status-label ${status}`}
-            >
-              {status === "completed"
-                ? "Completed"
-                : status === "in-progress"
-                ? "In Progress"
-                : "Not Started"}
-            </span>
-          </div>
+          {roadmap.map(
+            (item, index) => (
 
-        </div>
+              <div
+                className="roadmap-card"
+                key={`${item.skill}-${index}`}
+              >
 
-        {typeof item !== "string" && (
-          <>
-            <div className="roadmap-tags">
+                <h3>
+                  {item.skill}
+                </h3>
 
-              {item.level && (
-                <span className="roadmap-tag">
-                  Level: {item.level}
-                </span>
-              )}
+                <p>
+                  <strong>
+                    Level:
+                  </strong>
+                  {" "}
+                  {item.level}
+                </p>
 
-              {item.duration && (
-                <span className="roadmap-tag">
-                  Duration: {item.duration}
-                </span>
-              )}
+                <p>
+                  <strong>
+                    Duration:
+                  </strong>
+                  {" "}
+                  {item.duration}
+                </p>
 
-            </div>
 
-            {item.description && (
-              <p className="roadmap-description">
-                {item.description}
-              </p>
-            )}
+                <h4>
+                  Topics
+                </h4>
 
-            {item.project && (
-              <p className="roadmap-project">
-                <strong>Project:</strong>{" "}
-                {item.project}
-              </p>
-            )}
-
-            {Array.isArray(
-              item.topics
-            ) &&
-              item.topics.length > 0 && (
-                <div className="topic-list">
-                  {item.topics.map(
+                <ul>
+                  {item.topics?.map(
                     (topic, topicIndex) => (
-                      <span
+                      <li
                         key={topicIndex}
                       >
                         {topic}
-                      </span>
+                      </li>
                     )
                   )}
-                </div>
-              )}
-          </>
-        )}
+                </ul>
 
-        {/* STATUS BUTTONS */}
 
-        <div className="roadmap-status-buttons">
+                <h4>
+                  Recommended Project
+                </h4>
 
-          <button
-            className={
-              status === "not-started"
-                ? "status-btn selected"
-                : "status-btn"
-            }
-            onClick={() =>
-              updateProgress(
-                index,
-                "not-started"
-              )
-            }
-          >
-            ○ Not Started
-          </button>
+                <p>
+                  {item.project}
+                </p>
 
-          <button
-            className={
-              status === "in-progress"
-                ? "status-btn selected progress"
-                : "status-btn"
-            }
-            onClick={() =>
-              updateProgress(
-                index,
-                "in-progress"
-              )
-            }
-          >
-            ◉ In Progress
-          </button>
+              </div>
 
-          <button
-            className={
-              status === "completed"
-                ? "status-btn selected complete"
-                : "status-btn"
-            }
-            onClick={() =>
-              updateProgress(
-                index,
-                "completed"
-              )
-            }
-          >
-            ✓ Mark Complete
-          </button>
+            )
+          )}
 
         </div>
 
-      </div>
+      )}
+
+    </div>
+  );
+
+
+  /* ============================================================
+     MAIN RENDER
+     ============================================================ */
+
+  return (
+    <div className="app">
+
+      <header className="navbar">
+
+        <div
+          className="logo"
+          onClick={() => goTo("home")}
+        >
+          CareerPilot AI
+        </div>
+
+        <nav>
+
+          <button
+            onClick={() => goTo("home")}
+          >
+            Home
+          </button>
+
+          <button
+            onClick={() => goTo("resume")}
+          >
+            Resume
+          </button>
+
+          <button
+            onClick={() => goTo("job")}
+          >
+            Job Match
+          </button>
+
+          <button
+            onClick={() => goTo("roadmap")}
+          >
+            Roadmap
+          </button>
+
+        </nav>
+
+      </header>
+
+
+      <main>
+
+        {error && (
+          <div className="alert error">
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="alert success">
+            {success}
+          </div>
+        )}
+
+
+        {activePage === "home" &&
+          renderHome()}
+
+        {activePage === "resume" &&
+          renderResume()}
+
+        {activePage === "job" &&
+          renderJob()}
+
+        {activePage === "roadmap" &&
+          renderRoadmap()}
+
+      </main>
+
+
+      <footer>
+
+        <p>
+          CareerPilot AI
+        </p>
+
+        <button
+          onClick={testBackend}
+        >
+          Test Backend Connection
+        </button>
+
+        <button
+          onClick={resetAnalysis}
+        >
+          Reset
+        </button>
+
+      </footer>
+
     </div>
   );
 }
+
 
 export default App;
