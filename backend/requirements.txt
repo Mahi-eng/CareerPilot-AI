@@ -13,12 +13,14 @@ pydantic==2.13.4
 pydantic_core==2.46.4
 python-dateutil==2.9.0.post0
 python-multipart==0.0.32
+pypdf
+python-docx
 scikit-learn==1.9.0
 scipy==1.18.1
 six==1.17.0
-starlette==1.6.0
+starlette==0.52.0
 threadpoolctl==3.6.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.3
-uvicorn==0.52.4
+uvicorn==0.52.0
