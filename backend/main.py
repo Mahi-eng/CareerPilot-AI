@@ -1,479 +1,203 @@
-import io
-import logging
 import os
 import re
-from typing import List
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
-
-# ============================================================
-# CareerPilot AI
-# Production-ready FastAPI backend
-# ============================================================
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("careerpilot")
-
+from fastapi.responses import JSONResponse
+# PDF support check
+try:
+    import pypdf
+    PDF_SUPPORT = True
+    PDF_VERSION = getattr(pypdf, "__version__", "installed")
+except ImportError:
+    PDF_SUPPORT = False
+    PDF_VERSION = None
 
 # ============================================================
-# FASTAPI APP
+# CareerPilot AI - Backend
 # ============================================================
 
 app = FastAPI(
     title="CareerPilot AI",
-    description="AI-powered career and job recommendation system",
+    description="AI-powered career guidance and resume analysis API",
     version="2.0.0",
 )
 
 
 # ============================================================
-# CORS CONFIGURATION
-# ============================================================
-#
-# IMPORTANT:
-# The frontend is deployed on Render.
-#
-# Instead of allowing only one exact frontend URL, we allow:
-# - localhost development
-# - 127.0.0.1 development
-# - Render frontend applications
-# - HTTPS frontend applications
-#
-# This prevents the production frontend from being blocked
-# because of a small URL/origin difference.
+# CORS
 # ============================================================
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "").strip()
-
-allowed_origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-]
-
-if FRONTEND_URL:
-    allowed_origins.append(FRONTEND_URL.rstrip("/"))
-
+# Production frontend + local development origins.
+#
+# We also allow all origins so that the Render frontend does not
+# fail because its generated onrender.com URL changes.
+#
+# File upload APIs do not use cookies/authentication here, so
+# allow_origins=["*"] is appropriate for this project.
 app.add_middleware(
     CORSMiddleware,
-
-    # Local development origins
-    allow_origins=allowed_origins,
-
-    # Render / HTTPS production origins
-    #
-    # This covers:
-    # https://careerpilot-ai-frontend-j86v.onrender.com
-    # and similar Render frontend URLs.
-    allow_origin_regex=(
-        r"https://.*\.onrender\.com"
-    ),
-
-    # Frontend currently does not need cookies/auth credentials.
-    # Keeping this False also makes wildcard-style production
-    # CORS behavior safer and simpler.
+    allow_origins=["*"],
     allow_credentials=False,
-
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 
 # ============================================================
-# REQUEST MODELS
+# Basic configuration
 # ============================================================
 
-class JobAnalysisRequest(BaseModel):
-    resume_skills: List[str] = Field(default_factory=list)
-    job_description: str
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
-
-class RoadmapRequest(BaseModel):
-    missing_skills: List[str] = Field(default_factory=list)
-
-
-# ============================================================
-# SKILL DICTIONARY
-# ============================================================
-
-SKILL_ALIASES = {
-    "python": [
-        "python",
-        "python3",
-    ],
-
-    "java": [
-        "java",
-    ],
-
-    "javascript": [
-        "javascript",
-        "js",
-        "ecmascript",
-    ],
-
-    "typescript": [
-        "typescript",
-        "ts",
-    ],
-
-    "c": [
-        "c programming",
-        "c language",
-    ],
-
-    "c++": [
-        "c++",
-        "cpp",
-    ],
-
-    "c#": [
-        "c#",
-        "c sharp",
-        "c-sharp",
-    ],
-
-    "sql": [
-        "sql",
-        "mysql",
-        "postgresql",
-        "postgres",
-        "oracle sql",
-    ],
-
-    "mysql": [
-        "mysql",
-    ],
-
-    "postgresql": [
-        "postgresql",
-        "postgres",
-    ],
-
-    "html": [
-        "html",
-        "html5",
-    ],
-
-    "css": [
-        "css",
-        "css3",
-    ],
-
-    "react": [
-        "react",
-        "reactjs",
-        "react.js",
-    ],
-
-    "node.js": [
-        "node.js",
-        "nodejs",
-        "node js",
-    ],
-
-    "fastapi": [
-        "fastapi",
-    ],
-
-    "flask": [
-        "flask",
-    ],
-
-    "django": [
-        "django",
-    ],
-
-    "machine learning": [
-        "machine learning",
-        "machine-learning",
-        "machine learning algorithms",
-    ],
-
-    "deep learning": [
-        "deep learning",
-        "deep-learning",
-    ],
-
-    "artificial intelligence": [
-        "artificial intelligence",
-    ],
-
-    "generative ai": [
-        "generative ai",
-        "genai",
-        "gen ai",
-    ],
-
-    "nlp": [
-        "nlp",
-        "natural language processing",
-    ],
-
-    "computer vision": [
-        "computer vision",
-    ],
-
-    "opencv": [
-        "opencv",
-    ],
-
-    "tensorflow": [
-        "tensorflow",
-        "tensor flow",
-    ],
-
-    "pytorch": [
-        "pytorch",
-        "py torch",
-    ],
-
-    "pandas": [
-        "pandas",
-    ],
-
-    "numpy": [
-        "numpy",
-    ],
-
-    "scikit-learn": [
-        "scikit-learn",
-        "sklearn",
-        "scikit learn",
-    ],
-
-    "power bi": [
-        "power bi",
-        "powerbi",
-    ],
-
-    "tableau": [
-        "tableau",
-    ],
-
-    "excel": [
-        "excel",
-        "microsoft excel",
-        "ms excel",
-    ],
-
-    "data analysis": [
-        "data analysis",
-        "data analytics",
-        "data analyst",
-    ],
-
-    "data visualization": [
-        "data visualization",
-        "data visualisation",
-    ],
-
-    "statistics": [
-        "statistics",
-        "statistical analysis",
-    ],
-
-    "git": [
-        "git",
-    ],
-
-    "github": [
-        "github",
-    ],
-
-    "gitlab": [
-        "gitlab",
-    ],
-
-    "docker": [
-        "docker",
-    ],
-
-    "aws": [
-        "aws",
-        "amazon web services",
-    ],
-
-    "azure": [
-        "azure",
-        "microsoft azure",
-    ],
-
-    "gcp": [
-        "gcp",
-        "google cloud",
-        "google cloud platform",
-    ],
-
-    "rest api": [
-        "rest api",
-        "restful api",
-        "rest apis",
-    ],
-
-    "api": [
-        "api",
-        "apis",
-        "application programming interface",
-    ],
-
-    "mongodb": [
-        "mongodb",
-        "mongo db",
-    ],
-
-    "sqlite": [
-        "sqlite",
-    ],
-
-    "linux": [
-        "linux",
-    ],
-
-    "agile": [
-        "agile",
-        "scrum",
-    ],
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".doc",
 }
 
 
-COMMON_SKILLS = [
-    "python",
-    "java",
-    "javascript",
-    "typescript",
-    "c",
-    "c++",
-    "c#",
-    "sql",
-    "mysql",
-    "postgresql",
-    "html",
-    "css",
-    "react",
-    "node.js",
-    "fastapi",
-    "flask",
-    "django",
-    "machine learning",
-    "deep learning",
-    "artificial intelligence",
-    "generative ai",
-    "nlp",
-    "computer vision",
-    "opencv",
-    "tensorflow",
-    "pytorch",
-    "pandas",
-    "numpy",
-    "scikit-learn",
-    "power bi",
-    "tableau",
-    "excel",
-    "data analysis",
-    "data visualization",
-    "statistics",
-    "git",
-    "github",
-    "gitlab",
-    "docker",
-    "aws",
-    "azure",
-    "gcp",
-    "rest api",
-    "api",
-    "mongodb",
-    "sqlite",
-    "linux",
-    "agile",
-]
+# ============================================================
+# Root / Health
+# ============================================================
+
+@app.get("/")
+async def root():
+    return {
+        "message": "CareerPilot AI backend is running",
+        "status": "ok",
+        "docs": "/docs",
+    }
+
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "service": "CareerPilot AI",
+    }
+
+
+@app.get("/api/health")
+async def api_health():
+    return {
+        "status": "healthy",
+        "service": "CareerPilot AI",
+    }
 
 
 # ============================================================
-# SKILL EXTRACTION
+# Utility functions
 # ============================================================
 
-def _contains_skill(text: str, skill: str) -> bool:
+def clean_text(text: str) -> str:
     """
-    Detect a skill in text while avoiding many false positives.
+    Clean extracted resume text.
     """
-
     if not text:
-        return False
+        return ""
 
-    text_lower = text.lower()
+    text = text.replace("\x00", " ")
 
-    aliases = SKILL_ALIASES.get(skill, [skill])
+    # Normalize line endings
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
 
-    for alias in aliases:
-        alias = alias.lower().strip()
+    # Remove excessive spaces
+    text = re.sub(r"[ \t]+", " ", text)
 
-        if not alias:
-            continue
+    # Remove excessive blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
-        # Special handling for C.
-        if skill == "c":
-            patterns = [
-                r"(?<![a-z0-9])c(?![a-z0-9+#])",
-                r"\bc programming\b",
-                r"\bc language\b",
-            ]
+    return text.strip()
 
-            for pattern in patterns:
-                if re.search(pattern, text_lower):
-                    return True
 
-            continue
-
-        # Escape alias so characters such as + and . are handled.
-        escaped = re.escape(alias)
-
-        # Permit punctuation around technologies.
-        pattern = (
-            r"(?<![a-z0-9])"
-            + escaped
-            + r"(?![a-z0-9])"
+def validate_file(filename: Optional[str]) -> Path:
+    """
+    Validate uploaded filename and extension.
+    """
+    if not filename:
+        raise HTTPException(
+            status_code=400,
+            detail="No file name was provided.",
         )
 
-        if re.search(pattern, text_lower):
-            return True
+    extension = Path(filename).suffix.lower()
 
-    return False
+    if extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported file format. "
+                "Please upload a PDF, DOCX, or DOC file."
+            ),
+        )
+
+    return Path(filename)
 
 
-def extract_skills(text: str) -> List[str]:
+async def save_upload_file(upload_file: UploadFile) -> Path:
     """
-    Extract supported technical skills from resume/job text.
+    Save uploaded file to a temporary directory while checking
+    its size.
     """
 
-    if not text:
-        return []
+    suffix = Path(upload_file.filename or "").suffix.lower()
 
-    found = []
+    temp_file = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=suffix,
+    )
 
-    for skill in COMMON_SKILLS:
-        if _contains_skill(text, skill):
-            found.append(skill)
+    temp_path = Path(temp_file.name)
 
-    return found
+    total_size = 0
+
+    try:
+        with temp_file:
+            while True:
+                chunk = await upload_file.read(1024 * 1024)
+
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+
+                if total_size > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="File is too large. Maximum size is 10 MB.",
+                    )
+
+                temp_file.write(chunk)
+
+        return temp_path
+
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        raise
 
 
 # ============================================================
-# PDF EXTRACTION
+# PDF extraction
 # ============================================================
 
-def extract_pdf_text(data: bytes) -> str:
+def extract_pdf_text(file_path: Path) -> str:
     """
-    Extract text from PDF using pypdf.
+    Extract text from a PDF using pypdf.
 
-    pypdf is intentionally imported here so that the rest of
-    the backend can still start even if PDF dependency is
-    temporarily unavailable.
+    pypdf is imported here rather than at application startup so
+    that the health endpoint can still work even if the dependency
+    is missing.
     """
 
     try:
@@ -483,12 +207,13 @@ def extract_pdf_text(data: bytes) -> str:
             status_code=500,
             detail=(
                 "PDF support is not installed on the backend. "
-                "Please add 'pypdf' to requirements.txt and redeploy."
+                "Please add 'pypdf' to backend/requirements.txt "
+                "and redeploy the Render service."
             ),
         )
 
     try:
-        reader = PdfReader(io.BytesIO(data))
+        reader = PdfReader(str(file_path))
 
         pages = []
 
@@ -497,26 +222,24 @@ def extract_pdf_text(data: bytes) -> str:
                 page_text = page.extract_text() or ""
                 pages.append(page_text)
             except Exception:
-                pages.append("")
+                continue
 
-        return "\n".join(pages)
+        return clean_text("\n\n".join(pages))
 
     except Exception as exc:
-        logger.exception("PDF extraction failed")
-
         raise HTTPException(
-            status_code=400,
-            detail=f"Could not read PDF: {str(exc)}",
+            status_code=422,
+            detail=f"Unable to read PDF file: {str(exc)}",
         )
 
 
 # ============================================================
-# DOCX EXTRACTION
+# DOCX extraction
 # ============================================================
 
-def extract_docx_text(data: bytes) -> str:
+def extract_docx_text(file_path: Path) -> str:
     """
-    Extract text from DOCX files.
+    Extract text from a DOCX file using python-docx.
     """
 
     try:
@@ -525,850 +248,658 @@ def extract_docx_text(data: bytes) -> str:
         raise HTTPException(
             status_code=500,
             detail=(
-                "DOCX support is not installed on the backend. "
-                "Please add 'python-docx' to requirements.txt and redeploy."
+                "DOCX support is not installed. "
+                "Please add 'python-docx' to backend/requirements.txt "
+                "and redeploy."
             ),
         )
 
     try:
-        document = Document(io.BytesIO(data))
+        document = Document(str(file_path))
 
-        parts = []
+        paragraphs = []
 
-        # Paragraphs
         for paragraph in document.paragraphs:
-            if paragraph.text:
-                parts.append(paragraph.text)
+            text = paragraph.text.strip()
 
-        # Tables
+            if text:
+                paragraphs.append(text)
+
+        # Also extract table content.
         for table in document.tables:
             for row in table.rows:
-                row_text = []
+                row_values = []
 
                 for cell in row.cells:
-                    if cell.text:
-                        row_text.append(cell.text)
+                    value = cell.text.strip()
 
-                if row_text:
-                    parts.append(" ".join(row_text))
+                    if value:
+                        row_values.append(value)
 
-        return "\n".join(parts)
+                if row_values:
+                    paragraphs.append(" | ".join(row_values))
+
+        return clean_text("\n".join(paragraphs))
 
     except Exception as exc:
-        logger.exception("DOCX extraction failed")
-
         raise HTTPException(
-            status_code=400,
-            detail=f"Could not read DOCX: {str(exc)}",
+            status_code=422,
+            detail=f"Unable to read DOCX file: {str(exc)}",
         )
 
 
 # ============================================================
-# OLD DOC EXTRACTION
+# DOC extraction
 # ============================================================
 
-def extract_doc_text(data: bytes) -> str:
+def extract_doc_text(file_path: Path) -> str:
     """
-    Basic support for old .doc files.
+    Extract text from legacy .DOC files.
 
-    Old Microsoft .doc files are OLE binary documents and are
-    not reliably supported without additional dependencies.
+    Attempts:
+      1. antiword
+      2. LibreOffice conversion to DOCX
 
-    The application therefore recommends PDF or DOCX.
+    Legacy .doc files are not natively supported by python-docx.
     """
 
-    # Try a few decodings as a fallback.
-    for encoding in (
-        "utf-8",
-        "utf-16",
-        "latin-1",
-    ):
+    # --------------------------------------------------------
+    # Method 1: antiword
+    # --------------------------------------------------------
+
+    antiword_path = shutil.which("antiword")
+
+    if antiword_path:
         try:
-            text = data.decode(
-                encoding,
-                errors="ignore",
+            result = subprocess.run(
+                [antiword_path, str(file_path)],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
 
-            # Remove binary/control characters.
-            text = re.sub(
-                r"[\x00-\x08\x0b\x0c\x0e-\x1f]",
-                " ",
-                text,
-            )
-
-            # Clean whitespace.
-            text = re.sub(
-                r"\s+",
-                " ",
-                text,
-            ).strip()
-
-            # Accept only if it looks like actual text.
-            words = re.findall(
-                r"[A-Za-z]{2,}",
-                text,
-            )
-
-            if len(words) >= 10:
-                return text
+            if result.returncode == 0 and result.stdout.strip():
+                return clean_text(result.stdout)
 
         except Exception:
-            continue
+            pass
+
+    # --------------------------------------------------------
+    # Method 2: LibreOffice
+    # --------------------------------------------------------
+
+    libreoffice = (
+        shutil.which("libreoffice")
+        or shutil.which("soffice")
+    )
+
+    if libreoffice:
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+
+                subprocess.run(
+                    [
+                        libreoffice,
+                        "--headless",
+                        "--convert-to",
+                        "docx",
+                        "--outdir",
+                        temp_dir,
+                        str(file_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                converted_file = (
+                    Path(temp_dir)
+                    / f"{file_path.stem}.docx"
+                )
+
+                if converted_file.exists():
+                    return extract_docx_text(converted_file)
+
+        except Exception:
+            pass
+
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "Legacy DOC files cannot be read on this server. "
+            "Please save the resume as PDF or DOCX and upload it again."
+        ),
+    )
+
+
+# ============================================================
+# Resume text extraction
+# ============================================================
+
+def extract_resume_text(
+    file_path: Path,
+    extension: str,
+) -> str:
+
+    extension = extension.lower()
+
+    if extension == ".pdf":
+        return extract_pdf_text(file_path)
+
+    if extension == ".docx":
+        return extract_docx_text(file_path)
+
+    if extension == ".doc":
+        return extract_doc_text(file_path)
 
     raise HTTPException(
         status_code=400,
-        detail=(
-            "Old .doc files are not reliably readable. "
-            "Please save the resume as PDF or DOCX and upload again."
-        ),
+        detail="Unsupported resume format.",
     )
 
 
 # ============================================================
-# GENERAL RESUME READER
+# Resume analysis
 # ============================================================
 
-async def read_resume_file(file: UploadFile) -> str:
+COMMON_SKILLS = [
+    "python",
+    "java",
+    "javascript",
+    "typescript",
+    "c",
+    "c++",
+    "c#",
+    "html",
+    "css",
+    "react",
+    "react.js",
+    "node.js",
+    "node",
+    "express",
+    "fastapi",
+    "flask",
+    "django",
+    "sql",
+    "mysql",
+    "postgresql",
+    "mongodb",
+    "git",
+    "github",
+    "docker",
+    "aws",
+    "azure",
+    "machine learning",
+    "deep learning",
+    "artificial intelligence",
+    "ai",
+    "data science",
+    "data analysis",
+    "pandas",
+    "numpy",
+    "tensorflow",
+    "pytorch",
+    "scikit-learn",
+    "power bi",
+    "tableau",
+    "excel",
+    "communication",
+    "leadership",
+    "problem solving",
+    "teamwork",
+]
+
+
+def find_skills(text: str):
     """
-    Read and extract text from PDF, DOCX or DOC.
-    """
-
-    filename = (file.filename or "").strip()
-
-    if not filename:
-        raise HTTPException(
-            status_code=400,
-            detail="No filename provided.",
-        )
-
-    filename_lower = filename.lower()
-
-    allowed_extensions = (
-        ".pdf",
-        ".docx",
-        ".doc",
-    )
-
-    if not filename_lower.endswith(allowed_extensions):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported file type. "
-                "Please upload PDF, DOCX, or DOC."
-            ),
-        )
-
-    try:
-        data = await file.read()
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Could not read uploaded file: {str(exc)}",
-        )
-
-    if not data:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file is empty.",
-        )
-
-    if filename_lower.endswith(".pdf"):
-        return extract_pdf_text(data)
-
-    if filename_lower.endswith(".docx"):
-        return extract_docx_text(data)
-
-    return extract_doc_text(data)
-
-
-# ============================================================
-# ROOT ROUTE
-# ============================================================
-
-@app.get("/")
-def home():
-    return {
-        "message": "CareerPilot AI backend is running",
-        "status": "ok",
-        "service": "CareerPilot AI",
-        "version": "2.0.0",
-        "docs": "/docs",
-        "health": "/health",
-    }
-
-
-# ============================================================
-# HEALTH ROUTE
-# ============================================================
-
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy",
-        "service": "CareerPilot AI",
-        "version": "2.0.0",
-    }
-
-
-# ============================================================
-# CORS TEST ROUTE
-# ============================================================
-
-@app.get("/cors-test")
-def cors_test():
-    return {
-        "status": "ok",
-        "message": "CORS is configured correctly.",
-    }
-
-
-# ============================================================
-# RESUME UPLOAD
-# ============================================================
-
-@app.post("/upload-resume")
-async def upload_resume(
-    file: UploadFile = File(...)
-):
-    """
-    Upload and analyze a resume.
-
-    Frontend request:
-
-        FormData
-        key = file
-
-    Response:
-
-        {
-            "filename": "...",
-            "skills": [...],
-            "text_preview": "...",
-            "message": "..."
-        }
+    Find commonly mentioned skills in resume text.
     """
 
-    logger.info(
-        "Resume upload received: %s",
-        file.filename,
-    )
+    lower_text = text.lower()
 
-    text = await read_resume_file(file)
+    found = []
 
-    if not text.strip():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No readable text was found in the resume. "
-                "If this is a scanned PDF, please use a text-based "
-                "PDF or DOCX file."
-            ),
-        )
+    for skill in COMMON_SKILLS:
 
-    skills = extract_skills(text)
+        if skill.lower() in lower_text:
+            if skill not in found:
+                found.append(skill)
 
-    cleaned_preview = re.sub(
-        r"\s+",
-        " ",
+    return found
+
+
+def extract_email(text: str) -> Optional[str]:
+    match = re.search(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
         text,
-    ).strip()
-
-    return {
-        "filename": file.filename,
-        "skills": skills,
-        "text_preview": cleaned_preview[:1500],
-        "skill_count": len(skills),
-        "message": "Resume uploaded and analyzed successfully.",
-    }
-
-
-# ============================================================
-# JOB MATCHING
-# ============================================================
-
-@app.post("/analyze-job")
-def analyze_job(
-    request: JobAnalysisRequest
-):
-    """
-    Compare resume skills against job description.
-    """
-
-    job_description = (
-        request.job_description or ""
-    ).strip()
-
-    if not job_description:
-        raise HTTPException(
-            status_code=400,
-            detail="Job description cannot be empty.",
-        )
-
-    # Normalize resume skills.
-    resume_skills = []
-
-    for skill in request.resume_skills:
-
-        value = str(skill).strip().lower()
-
-        if value and value not in resume_skills:
-            resume_skills.append(value)
-
-    # Detect required job skills.
-    required_skills = extract_skills(
-        job_description
     )
 
-    # No supported skills found.
-    if not required_skills:
-        return {
-            "match_score": 0,
-            "matched_skills": [],
-            "missing_skills": [],
-            "required_skills": [],
-            "message": (
-                "No supported technical skills were detected "
-                "in this job description."
-            ),
-        }
+    return match.group(0) if match else None
 
-    matched_skills = []
-    missing_skills = []
 
-    for required in required_skills:
-
-        if required in resume_skills:
-            matched_skills.append(required)
-        else:
-            missing_skills.append(required)
-
-    match_score = round(
-        (
-            len(matched_skills)
-            / len(required_skills)
-        )
-        * 100
+def extract_phone(text: str) -> Optional[str]:
+    match = re.search(
+        r"(?:\+91[\s-]?)?[6-9]\d{9}",
+        text,
     )
 
-    return {
-        "match_score": match_score,
-        "matched_skills": matched_skills,
-        "missing_skills": missing_skills,
-        "required_skills": required_skills,
-        "message": "Job compatibility analyzed successfully.",
-    }
+    return match.group(0) if match else None
 
 
-# ============================================================
-# LEARNING ROADMAP DATA
-# ============================================================
+def estimate_resume_score(
+    text: str,
+    skills: list,
+) -> int:
 
-ROADMAP_DATA = {
+    score = 0
 
-    "python": {
-        "level": "Beginner",
-        "duration": "2-3 weeks",
-        "topics": [
-            "Syntax",
-            "Functions",
-            "OOP",
-            "File handling",
-            "Libraries",
-        ],
-        "project": "Build a Resume Skill Analyzer",
-    },
+    lower_text = text.lower()
 
-    "java": {
-        "level": "Beginner",
-        "duration": "3-4 weeks",
-        "topics": [
-            "Syntax",
-            "OOP",
-            "Collections",
-            "Exception handling",
-            "JDBC",
-        ],
-        "project": "Build a Student Management System",
-    },
-
-    "sql": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "SELECT",
-            "JOINs",
-            "GROUP BY",
-            "Subqueries",
-            "Window functions",
-        ],
-        "project": "Build a Sales Analytics Database",
-    },
-
-    "mysql": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Tables",
-            "Queries",
-            "JOINs",
-            "Indexes",
-            "Database design",
-        ],
-        "project": "Build a Career Data Management Database",
-    },
-
-    "excel": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Formulas",
-            "Functions",
-            "Pivot tables",
-            "Charts",
-            "Lookups",
-        ],
-        "project": "Build an Employee Analytics Dashboard",
-    },
-
-    "power bi": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Power BI interface",
-            "Data cleaning",
-            "DAX basics",
-            "Charts",
-            "Dashboards",
-        ],
-        "project": "Build a Business Intelligence Dashboard",
-    },
-
-    "tableau": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Tableau interface",
-            "Connecting datasets",
-            "Charts",
-            "Filters",
-            "Dashboards",
-        ],
-        "project": "Build a Sales Dashboard",
-    },
-
-    "machine learning": {
-        "level": "Intermediate",
-        "duration": "3-4 weeks",
-        "topics": [
-            "Regression",
-            "Classification",
-            "Clustering",
-            "Feature engineering",
-            "Evaluation",
-        ],
-        "project": "Build a Job Salary Prediction Model",
-    },
-
-    "deep learning": {
-        "level": "Intermediate",
-        "duration": "4-5 weeks",
-        "topics": [
-            "Neural networks",
-            "CNNs",
-            "Training",
-            "Validation",
-            "Transfer learning",
-        ],
-        "project": "Build an Image Classification System",
-    },
-
-    "artificial intelligence": {
-        "level": "Intermediate",
-        "duration": "3-4 weeks",
-        "topics": [
-            "AI fundamentals",
-            "Search",
-            "Reasoning",
-            "Machine learning",
-            "AI applications",
-        ],
-        "project": "Build an AI Career Recommendation System",
-    },
-
-    "generative ai": {
-        "level": "Intermediate",
-        "duration": "3-4 weeks",
-        "topics": [
-            "LLMs",
-            "Prompt engineering",
-            "Embeddings",
-            "RAG",
-            "Evaluation",
-        ],
-        "project": "Build a Resume Q&A Assistant",
-    },
-
-    "nlp": {
-        "level": "Intermediate",
-        "duration": "3-4 weeks",
-        "topics": [
-            "Text preprocessing",
-            "Embeddings",
-            "Classification",
-            "Transformers",
-            "Evaluation",
-        ],
-        "project": "Build a Job Description Classifier",
-    },
-
-    "javascript": {
-        "level": "Beginner",
-        "duration": "2-3 weeks",
-        "topics": [
-            "ES6",
-            "Functions",
-            "DOM",
-            "Async/Await",
-            "APIs",
-        ],
-        "project": "Build an Interactive Career Dashboard",
-    },
-
-    "typescript": {
-        "level": "Beginner",
-        "duration": "2-3 weeks",
-        "topics": [
-            "Types",
-            "Interfaces",
-            "Functions",
-            "Generics",
-            "Type-safe APIs",
-        ],
-        "project": "Build a TypeScript Career Dashboard",
-    },
-
-    "react": {
-        "level": "Beginner",
-        "duration": "2-3 weeks",
-        "topics": [
-            "Components",
-            "Props",
-            "State",
-            "Hooks",
-            "API integration",
-        ],
-        "project": "Build a Job Matching Frontend",
-    },
-
-    "html": {
-        "level": "Beginner",
-        "duration": "1 week",
-        "topics": [
-            "Semantic HTML",
-            "Forms",
-            "Tables",
-            "Accessibility",
-            "Page structure",
-        ],
-        "project": "Build a Personal Portfolio",
-    },
-
-    "css": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Selectors",
-            "Flexbox",
-            "Grid",
-            "Responsive design",
-            "Animations",
-        ],
-        "project": "Build a Responsive Portfolio",
-    },
-
-    "git": {
-        "level": "Beginner",
-        "duration": "1 week",
-        "topics": [
-            "Commits",
-            "Branches",
-            "Merge",
-            "Pull requests",
-            "GitHub",
-        ],
-        "project": "Publish CareerPilot AI on GitHub",
-    },
-
-    "github": {
-        "level": "Beginner",
-        "duration": "1 week",
-        "topics": [
-            "Repositories",
-            "Branches",
-            "Pull requests",
-            "Issues",
-            "GitHub Actions",
-        ],
-        "project": "Deploy a CareerPilot AI project",
-    },
-
-    "docker": {
-        "level": "Intermediate",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Images",
-            "Containers",
-            "Dockerfile",
-            "Compose",
-            "Volumes",
-        ],
-        "project": "Containerize CareerPilot AI",
-    },
-
-    "aws": {
-        "level": "Beginner",
-        "duration": "2-3 weeks",
-        "topics": [
-            "EC2",
-            "S3",
-            "IAM",
-            "Networking",
-            "Deployment",
-        ],
-        "project": "Deploy a FastAPI Application",
-    },
-
-    "azure": {
-        "level": "Beginner",
-        "duration": "2-3 weeks",
-        "topics": [
-            "Azure fundamentals",
-            "App Service",
-            "Storage",
-            "Identity",
-            "Deployment",
-        ],
-        "project": "Deploy a FastAPI application on Azure",
-    },
-
-    "opencv": {
-        "level": "Intermediate",
-        "duration": "2-3 weeks",
-        "topics": [
-            "Images",
-            "Video",
-            "Contours",
-            "Object detection",
-            "Preprocessing",
-        ],
-        "project": "Build a Traffic Monitoring System",
-    },
-
-    "computer vision": {
-        "level": "Intermediate",
-        "duration": "3-4 weeks",
-        "topics": [
-            "Image processing",
-            "Detection",
-            "Classification",
-            "YOLO",
-            "Evaluation",
-        ],
-        "project": "Build an Object Detection Application",
-    },
-
-    "pandas": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "DataFrames",
-            "Series",
-            "Data cleaning",
-            "Grouping",
-            "Data analysis",
-        ],
-        "project": "Build a Resume Data Analyzer",
-    },
-
-    "numpy": {
-        "level": "Beginner",
-        "duration": "1 week",
-        "topics": [
-            "Arrays",
-            "Indexing",
-            "Vectorization",
-            "Statistics",
-            "Linear algebra",
-        ],
-        "project": "Build a Data Analysis Tool",
-    },
-
-    "fastapi": {
-        "level": "Intermediate",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Routes",
-            "Request models",
-            "File uploads",
-            "CORS",
-            "Deployment",
-        ],
-        "project": "Build a Resume Analysis API",
-    },
-
-    "mongodb": {
-        "level": "Beginner",
-        "duration": "2 weeks",
-        "topics": [
-            "Documents",
-            "Collections",
-            "CRUD",
-            "Queries",
-            "Indexes",
-        ],
-        "project": "Build a Career Profile Database",
-    },
-
-    "linux": {
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            "Terminal",
-            "Files",
-            "Permissions",
-            "Processes",
-            "Networking",
-        ],
-        "project": "Deploy CareerPilot AI on Linux",
-    },
-
-    "agile": {
-        "level": "Beginner",
-        "duration": "1 week",
-        "topics": [
-            "Agile principles",
-            "Scrum",
-            "Sprints",
-            "Backlog",
-            "Retrospectives",
-        ],
-        "project": "Plan CareerPilot AI using Scrum",
-    },
-}
-
-
-# ============================================================
-# ROADMAP BUILDER
-# ============================================================
-
-def build_roadmap_item(skill: str) -> dict:
-
-    skill_key = skill.strip().lower()
-
-    if skill_key in ROADMAP_DATA:
-
-        data = ROADMAP_DATA[skill_key].copy()
-
-        data["skill"] = skill
-
-        return data
-
-    return {
-        "skill": skill,
-        "level": "Beginner",
-        "duration": "1-2 weeks",
-        "topics": [
-            f"Introduction to {skill}",
-            f"Core {skill} concepts",
-            "Practical exercises",
-            "Real-world applications",
-            "Interview preparation",
-        ],
-        "project": (
-            f"Build a practical project using {skill}"
-        ),
-    }
-
-
-# ============================================================
-# LEARNING ROADMAP ENDPOINT
-# ============================================================
-
-@app.post("/learning-roadmap")
-def learning_roadmap(
-    request: RoadmapRequest
-):
-    """
-    Generate a learning roadmap for missing skills.
-    """
-
-    missing = []
-
-    existing_lower = set()
-
-    for skill in request.missing_skills:
-
-        value = str(skill).strip()
-
-        if not value:
-            continue
-
-        key = value.lower()
-
-        if key not in existing_lower:
-            missing.append(value)
-            existing_lower.add(key)
-
-    if not missing:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No missing skills supplied. "
-                "Analyze a job first."
-            ),
-        )
-
-    roadmap = [
-        build_roadmap_item(skill)
-        for skill in missing
+    # Basic resume sections
+    sections = [
+        "education",
+        "experience",
+        "skills",
+        "projects",
+        "certification",
+        "summary",
     ]
 
+    for section in sections:
+        if section in lower_text:
+            score += 8
+
+    # Skills
+    score += min(len(skills) * 3, 30)
+
+    # Contact information
+    if extract_email(text):
+        score += 5
+
+    if extract_phone(text):
+        score += 5
+
+    # Reasonable resume length
+    word_count = len(text.split())
+
+    if word_count >= 150:
+        score += 5
+
+    if word_count >= 300:
+        score += 5
+
+    return min(score, 100)
+
+
+def generate_suggestions(
+    text: str,
+    skills: list,
+):
+    lower_text = text.lower()
+
+    suggestions = []
+
+    if "summary" not in lower_text and "objective" not in lower_text:
+        suggestions.append(
+            "Add a concise professional summary or career objective."
+        )
+
+    if "project" not in lower_text:
+        suggestions.append(
+            "Add relevant academic or personal projects."
+        )
+
+    if "experience" not in lower_text and "internship" not in lower_text:
+        suggestions.append(
+            "Include internship, training, or practical experience."
+        )
+
+    if len(skills) < 5:
+        suggestions.append(
+            "Add more relevant technical and professional skills."
+        )
+
+    if "certification" not in lower_text and "certifications" not in lower_text:
+        suggestions.append(
+            "Consider adding relevant certifications."
+        )
+
+    if "github" not in lower_text:
+        suggestions.append(
+            "Add your GitHub profile if you have relevant projects."
+        )
+
+    if not suggestions:
+        suggestions.append(
+            "Your resume contains the major sections. "
+            "Continue tailoring it for each target job."
+        )
+
+    return suggestions
+
+
+def analyze_resume_text(text: str) -> Dict[str, Any]:
+
+    text = clean_text(text)
+
+    if not text:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "No readable text was found in the resume. "
+                "Please upload a text-based PDF or DOCX file."
+            ),
+        )
+
+    skills = find_skills(text)
+
+    score = estimate_resume_score(
+        text,
+        skills,
+    )
+
+    suggestions = generate_suggestions(
+        text,
+        skills,
+    )
+
     return {
-        "skills": missing,
-        "roadmap": roadmap,
-        "message": "Learning roadmap generated successfully.",
+        "score": score,
+        "skills": skills,
+        "email": extract_email(text),
+        "phone": extract_phone(text),
+        "suggestions": suggestions,
+        "word_count": len(text.split()),
+        "text_preview": text[:3000],
     }
 
 
 # ============================================================
-# GLOBAL ERROR HANDLER
+# Main Resume Analysis Endpoint
 # ============================================================
 
-@app.get("/api-status")
-def api_status():
+@app.post("/analyze-resume")
+async def analyze_resume(
+    file: UploadFile = File(...),
+):
     """
-    Simple endpoint useful for frontend debugging.
+    Analyze a PDF/DOCX/DOC resume.
+
+    This endpoint is intentionally available at the root
+    /analyze-resume path because the frontend can call it
+    directly using the backend URL.
     """
 
+    validate_file(file.filename)
+
+    temp_path = None
+
+    try:
+        temp_path = await save_upload_file(file)
+
+        extension = Path(
+            file.filename or ""
+        ).suffix.lower()
+
+        text = extract_resume_text(
+            temp_path,
+            extension,
+        )
+
+        analysis = analyze_resume_text(text)
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "file_type": extension.replace(".", "").upper(),
+            "analysis": analysis,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "detail": (
+                    "An unexpected error occurred while "
+                    f"analyzing the resume: {str(exc)}"
+                ),
+            },
+        )
+
+    finally:
+        if temp_path:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        try:
+            await file.close()
+        except Exception:
+            pass
+
+
+# ============================================================
+# API aliases
+# ============================================================
+
+@app.post("/api/analyze-resume")
+async def api_analyze_resume(
+    file: UploadFile = File(...),
+):
+    """
+    API alias for /analyze-resume.
+    """
+
+    return await analyze_resume(file)
+
+
+@app.post("/api/resume/analyze")
+async def api_resume_analyze(
+    file: UploadFile = File(...),
+):
+    """
+    Second API alias for frontend compatibility.
+    """
+
+    return await analyze_resume(file)
+
+
+@app.post("/resume/analyze")
+async def resume_analyze(
+    file: UploadFile = File(...),
+):
+    """
+    Third API alias for frontend compatibility.
+    """
+
+    return await analyze_resume(file)
+
+
+# ============================================================
+# Simple Job Match endpoint
+# ============================================================
+
+@app.post("/job-match")
+async def job_match(data: Dict[str, Any]):
+    """
+    Basic job matching endpoint.
+
+    The frontend can send:
+
+    {
+        "skills": ["python", "sql"],
+        "job_description": "Python developer with SQL..."
+    }
+    """
+
+    skills = data.get("skills", [])
+    job_description = data.get(
+        "job_description",
+        "",
+    )
+
+    if isinstance(skills, str):
+        skills = [skills]
+
+    job_text = str(job_description).lower()
+
+    matched = []
+    missing = []
+
+    for skill in skills:
+        skill_string = str(skill)
+
+        if skill_string.lower() in job_text:
+            matched.append(skill_string)
+        else:
+            missing.append(skill_string)
+
+    total = len(skills)
+
+    match_percentage = (
+        round((len(matched) / total) * 100)
+        if total
+        else 0
+    )
+
     return {
-        "backend": "online",
-        "service": "CareerPilot AI",
-        "cors": "enabled",
-        "resume_upload": "/upload-resume",
-        "job_matching": "/analyze-job",
-        "roadmap": "/learning-roadmap",
+        "success": True,
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "match_percentage": match_percentage,
     }
 
 
+@app.post("/api/job-match")
+async def api_job_match(data: Dict[str, Any]):
+    return await job_match(data)
+
+
 # ============================================================
-# START SERVER
+# Roadmap endpoint
+# ============================================================
+
+@app.post("/roadmap")
+async def roadmap(data: Dict[str, Any]):
+    """
+    Generate a simple career roadmap based on a target role.
+    """
+
+    target_role = str(
+        data.get(
+            "target_role",
+            "Software Developer",
+        )
+    )
+
+    roadmap_data = {
+        "target_role": target_role,
+        "steps": [
+            {
+                "stage": 1,
+                "title": "Build Fundamentals",
+                "description": (
+                    "Strengthen programming, data structures, "
+                    "algorithms, and computer science fundamentals."
+                ),
+            },
+            {
+                "stage": 2,
+                "title": "Develop Projects",
+                "description": (
+                    "Build practical projects related to "
+                    f"{target_role}."
+                ),
+            },
+            {
+                "stage": 3,
+                "title": "Improve Resume",
+                "description": (
+                    "Highlight projects, skills, internships, "
+                    "certifications, and measurable achievements."
+                ),
+            },
+            {
+                "stage": 4,
+                "title": "Prepare for Interviews",
+                "description": (
+                    "Practice technical interviews, aptitude, "
+                    "communication, and behavioral questions."
+                ),
+            },
+            {
+                "stage": 5,
+                "title": "Apply for Jobs",
+                "description": (
+                    "Apply to relevant internships and "
+                    "full-time opportunities."
+                ),
+            },
+        ],
+    }
+
+    return {
+        "success": True,
+        "roadmap": roadmap_data,
+    }
+
+
+@app.post("/api/roadmap")
+async def api_roadmap(data: Dict[str, Any]):
+    return await roadmap(data)
+
+
+# ============================================================
+# PDF support status
+# ============================================================
+
+@app.get("/pdf-support")
+async def pdf_support():
+    return {
+        "pdf_support": PDF_SUPPORT,
+        "pypdf_version": PDF_VERSION,
+        "message": (
+            "PDF support is available"
+            if PDF_SUPPORT
+            else "pypdf is not installed. Add pypdf to requirements.txt and redeploy."
+        ),
+    }
+
+
+@app.get("/api/pdf-support")
+async def api_pdf_support():
+    return await pdf_support()
+
+
+# ============================================================
+# Startup
+# ============================================================
+
+@app.on_event("startup")
+async def startup_event():
+
+    print("=" * 60)
+    print("🚀 CareerPilot AI backend starting...")
+    print("=" * 60)
+    print("Health: /health")
+    print("Docs:   /docs")
+    print("Resume: /analyze-resume")
+    print(f"PDF support: {PDF_SUPPORT} (pypdf={PDF_VERSION})")
+    print("=" * 60)
+
+
+# ============================================================
+# Local execution
 # ============================================================
 
 if __name__ == "__main__":
-
     import uvicorn
 
-    # Render provides PORT through environment variables.
     port = int(
         os.environ.get(
             "PORT",
@@ -1377,7 +908,8 @@ if __name__ == "__main__":
     )
 
     uvicorn.run(
-        app,
+        "main:app",
         host="0.0.0.0",
         port=port,
+        reload=False,
     )

@@ -13,8 +13,8 @@ pydantic==2.13.4
 pydantic_core==2.46.4
 python-dateutil==2.9.0.post0
 python-multipart==0.0.32
-pypdf
-python-docx
+pypdf==6.0.0
+python-docx==1.2.0
 scikit-learn==1.9.0
 scipy==1.18.1
 six==1.17.0
